@@ -1,7 +1,7 @@
 // A PDF on the phone: the app's viewer (viewer.html) over the whole screen, under a thin bar with
 // the paper's name and a way back. The viewer keeps its own tools (highlighting, quoting into a
 // note, its page list).
-import { type ViewerSpot, viewerUrl } from '../api.js';
+import { type ViewerSpot, attachmentOpensOffline, viewerUrl } from '../api.js';
 import { icon } from '../icons.js';
 import type { Attachment, Item } from '../types.js';
 import { escapeHtml as esc } from '../util.js';
@@ -17,7 +17,9 @@ export function readerScreen(item: Pick<Item, 'id' | 'title' | 'authors' | 'year
     mount(el, ctx) {
       el.classList.add('ph-reader');
       el.innerHTML = `${navBar(ctx.backLabel, name, `<a class="ph-nav-btn" href="${esc(viewerUrl(item, att, page, at))}" target="_blank" rel="noopener" aria-label="Open in a browser tab" title="Open in a browser tab">${icon('newWindow')}</a>`)}
-        <iframe class="ph-reader-frame" title="${esc(item.title || 'PDF')}" src="${esc(viewerUrl(item, att, page, at))}"></iframe>`;
+        ${attachmentOpensOffline(att)
+    ? `<iframe class="ph-reader-frame" title="${esc(item.title || 'PDF')}" src="${esc(viewerUrl(item, att, page, at))}"></iframe>`
+    : `<div class="ph-empty">${icon('pdf')}<h3>Not saved on this device</h3><p>This PDF was not saved for offline use. Open it again when Synapse can be reached.</p></div>`}`;
     },
   };
 }

@@ -1,4 +1,5 @@
-// Synapse's service worker: keeps the app usable on a bad connection (docs/offline.md).
+// Synapse's service worker: keeps the app usable on a bad connection (docs/offline.md). The page
+// registers it only when the user turned on Settings → Offline Use, and removes it when it is turned off.
 //
 // Reading: every GET the app makes is saved in the Cache Storage when it succeeds. Pages,
 // scripts and data are fetched from the network first (with a timeout) and fall back to the
@@ -13,21 +14,27 @@ const TIMEOUT_MS = 6000;
 const DB = 'synapse-offline';
 const STORE = 'outbox';
 
+// Never saved: streams, secrets, and note texts (a locked note must not outlive its lock in a cache).
 const NEVER = [/^\/api\/changes/, /^\/api\/presence/, /^\/sw\.js$/, /^\/mcp/, /^\/api\/passkeys/, /^\/api\/devices/,
-  /^\/api\/backups/, /^\/api\/updates/];
+  /^\/api\/backups/, /^\/api\/updates/, /^\/api\/notes\/(note|history|links|lock|locks|unlock|relock)/, /^\/api\/companion/, /^\/api\/mcp\//];
 const PDF = [/^\/pdfs\//, /^\/api\/attachments\/\d+\/remote$/, /^\/api\/note-pdfs\/\d+\/file/];
 const ANNO_WRITE = [/^\/api\/(attachments|note-pdfs)\/\d+\/annotations$/, /^\/api\/annotations\/[^/]+$/];
 
 self.addEventListener('install', () => self.skipWaiting());
 self.addEventListener('activate', (e) => e.waitUntil(self.clients.claim()));
 
+let off = false;   // turned off in Settings: this worker only waits for its pages to close
+
 self.addEventListener('message', (e) => {
+  if (e.data === 'off') off = true;
   if (e.data === 'flush') e.waitUntil(flush());
-  if (e.data === 'status') e.waitUntil(broadcast());
-  if (e.data && e.data.keep) e.waitUntil(keep(e.data.keep, !!e.data.quiet));
+  if (e.data === 'status') e.waitUntil(broadcast().then(() => post({ type: 'reach', up: reachable })));
+  if (e.data && e.data.keep) e.waitUntil(keep(e.data));
+  if (e.data && e.data.prune) e.waitUntil(prune(e.data.prune));
 });
 
 self.addEventListener('fetch', (e) => {
+  if (off) return;
   const req = e.request;
   const url = new URL(req.url);
   if (url.origin !== self.location.origin) return;
@@ -46,7 +53,7 @@ self.addEventListener('fetch', (e) => {
 function timeout(ms) { return new Promise((_, no) => setTimeout(() => no(new Error('timeout')), ms)); }
 
 async function save(req, res) {
-  if (res.ok && res.status === 200 && res.type === 'basic' && !res.redirected) {
+  if (!off && res.ok && res.status === 200 && res.type === 'basic' && !res.redirected) {
     const c = await caches.open(CACHE);
     await c.put(req, res.clone());
   }
@@ -62,12 +69,18 @@ async function saved(req) {
   return undefined;
 }
 
+let reachable = true;
+/** Tells the pages when the server stops or starts answering (the browser can be online and the server not). */
+function reach(up) { if (up !== reachable) { reachable = up; post({ type: 'reach', up }); } }
+
 async function networkFirst(req) {
   try {
     const res = await Promise.race([fetch(req), timeout(TIMEOUT_MS)]);
+    reach(true);
     flushSoon();
     return save(req, res);
   } catch (err) {
+    reach(false);
     const hit = await saved(req);
     if (hit) return hit;
     return offlineAnswer(req);
@@ -77,7 +90,7 @@ async function networkFirst(req) {
 async function cacheFirst(req) {
   const hit = await saved(req);
   if (hit) return hit;
-  try { return await save(req, await fetch(req)); } catch { return offlineAnswer(req); }
+  try { return await save(req, await fetch(req)); } catch { reach(false); return offlineAnswer(req); }
 }
 
 function offlineAnswer(req) {
@@ -90,15 +103,17 @@ function offlineAnswer(req) {
     { status: 503, headers: { 'Content-Type': 'text/plain; charset=utf-8', 'X-Synapse-Offline': '1' } });
 }
 
-/** Saves a list of URLs (PDFs, pages) for offline use, four at a time, each given at most 30 s;
- *  reports progress to the pages unless asked to be quiet (the automatic saving after a visit). */
-async function keep(urls, quiet = false) {
+/** Saves a list of URLs (pages, scripts, data, PDFs) for offline use, four at a time, each given at
+ *  most 30 s, and tells the pages how many worked (``id`` says which request). With ``refresh`` a
+ *  URL already saved is fetched again. The page sends short lists one after another, so a long
+ *  save never depends on this worker staying alive. */
+async function keep({ keep: urls, id, refresh }) {
   let done = 0, failed = 0, next = 0;
   const one = async (u) => {
     const path = new URL(u, self.location.origin).pathname;
     if (NEVER.some((r) => r.test(path))) return;
     const req = new Request(u, { credentials: 'same-origin' });
-    if (await saved(req)) return;
+    if (!refresh && await saved(req)) return;
     const res = await Promise.race([fetch(req), timeout(30000)]);
     if (!res.ok) throw new Error(String(res.status));
     await save(req, res);
@@ -107,10 +122,21 @@ async function keep(urls, quiet = false) {
     while (next < urls.length) {
       const u = urls[next++];
       try { await one(u); done++; } catch { failed++; }
-      if (!quiet) await post({ type: 'keep-progress', done, failed, total: urls.length });
     }
   };
   await Promise.all([worker(), worker(), worker(), worker()]);
+  await post({ type: 'keep-done', id, done, failed });
+}
+
+/** Forgets saved PDFs and annotation lists that are not in ``allowed`` (the library no longer has them). */
+async function prune(allowed) {
+  const keepSet = new Set(allowed);
+  const c = await caches.open(CACHE);
+  for (const req of await c.keys()) {
+    const u = new URL(req.url);
+    const mine = PDF.some((r) => r.test(u.pathname)) || /\/annotations$/.test(u.pathname);
+    if (mine && !keepSet.has(u.pathname + u.search)) await c.delete(req);
+  }
 }
 
 // ------------------------------------------------------------------------- the outbox
@@ -127,8 +153,8 @@ async function tx(mode, fn) {
   return new Promise((ok, no) => {
     const t = db.transaction(STORE, mode);
     const out = fn(t.objectStore(STORE));
-    t.oncomplete = () => ok(out && 'result' in out ? out.result : undefined);
-    t.onerror = () => no(t.error);
+    t.oncomplete = () => { db.close(); ok(out && 'result' in out ? out.result : undefined); };   // an open connection would block deleting the database
+    t.onerror = () => { db.close(); no(t.error); };
   });
 }
 const queued = () => tx('readonly', (s) => s.getAll());
@@ -142,7 +168,7 @@ async function write(req) {
     try {
       const res = await Promise.race([fetch(req), timeout(TIMEOUT_MS)]);
       return res;
-    } catch { /* offline: queue it */ }
+    } catch { reach(false); /* offline: queue it */ }
   }
   const entry = { method: req.method, url: req.url, body, client: req.headers.get('X-Synapse-Client') || '', at: Date.now() };
   await enqueue(entry);
@@ -194,6 +220,7 @@ let flushTimer = null;
 function flushSoon() { if (!flushTimer) flushTimer = setTimeout(() => { flushTimer = null; flush(); }, 1500); }
 
 function flush() {
+  if (off) return Promise.resolve();   // turned off: opening the database would create it again
   if (!flushing) flushing = doFlush().finally(() => { flushing = null; });
   return flushing;
 }
@@ -222,5 +249,6 @@ async function post(msg) {
   for (const c of await self.clients.matchAll({ includeUncontrolled: true })) c.postMessage(msg);
 }
 async function broadcast(extra = {}) {
+  if (off) return;
   await post({ type: 'outbox', waiting: (await queued()).length, ...extra });
 }

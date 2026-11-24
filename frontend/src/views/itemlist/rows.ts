@@ -2,9 +2,11 @@
 // DOM, between two spacers that stand for the rest. Each entry (its heading when it starts a group
 // of a plugin's list, its row, its attachment rows when expanded, its full-text snippet) has a
 // height that is estimated and then measured. A folded group is an entry with its heading alone.
+import { fileUrl } from '../../api.js';
 import { icon, typeIcon } from '../../icons.js';
+import { OFFLINE_EVENT, offlineNow, pdfSaved } from '../../offline.js';
 import { FIELD_COL, byId, fieldText, groupRuns, itemFolderPaths, itemTypeLabel, on, sortedItems, state, tagColor, viewSort } from '../../store.js';
-import type { Item } from '../../types.js';
+import type { Attachment, Item } from '../../types.js';
 import { escapeHtml, formatDate, hitBadge, plural, shortAuthors, storage, store } from '../../util.js';
 import { sourceBadges } from '../../ui/sourceBadges.js';
 import { visibleCols } from './columns.js';
@@ -47,14 +49,28 @@ export function initRows(els: { pane: HTMLElement; scroller: HTMLElement; head: 
   });
   on('selection', paintSelection);
   on('item-updated', (id) => updateRow(id as string));
+  // reachability or the saved files changed: draw the marks (or take them away again)
+  window.addEventListener(OFFLINE_EVENT, () => { if (marked || offlineNow()) { marked = offlineNow(); renderBody(); } });
 }
+
+/* ------------------------------------------------------------------ offline */
+/** While offline: true for an item whose PDFs were never saved on this device (one with no PDF is just its record). */
+function missingOffline(it: Item): boolean {
+  const pdfs = (it.attachments || []).filter((a) => a.type === 'pdf');
+  return offlineNow() && pdfs.length > 0 && !pdfs.some((a) => pdfSaved(fileUrl(a)));
+}
+
+const notSaved = (a: Attachment) => offlineNow() && a.type === 'pdf' && !pdfSaved(fileUrl(a));
+let marked = false;   // the rows were drawn with the offline marks
 
 /* ------------------------------------------------------------------ one row */
 function cellHtml(colId: string, it: Item): string {
   switch (colId) {
     case 'attachments': {
       const n = (it.attachments || []).length;
-      return n ? `<span class="pdf-dot" data-act="open" title="Open PDF${n > 1 ? ` (${n} attachments)` : ''}">${icon('pdf', 'icon-sm')}</span>` : '';
+      if (!n) return '';
+      const off = missingOffline(it);
+      return `<span class="pdf-dot${off ? ' offline-missing' : ''}" data-act="open" title="${off ? 'Not saved for offline use' : `Open PDF${n > 1 ? ` (${n} attachments)` : ''}`}">${icon('pdf', 'icon-sm')}</span>`;
     }
     case 'notes': {
       const n = state.noteKeys[it.citation_key || ''];
@@ -111,10 +127,10 @@ function rowHtml(it: Item, index = 0): string {
     return `<div class="cell c-${c.id}" data-col="${c.id}"${title}>${cellHtml(c.id, it)}</div>`;
   }).join('');
   const drag = state.view !== 'trash' && !it._outside;
-  let html = `<div class="row ${index % 2 ? 'alt' : ''} ${it._outside ? 'outside' : ''} ${state.selection.has(it.id) ? 'selected' : ''}" role="row" data-id="${escapeHtml(it.id)}" data-index="${index}" draggable="${drag}">${cells}</div>`;
+  let html = `<div class="row ${index % 2 ? 'alt' : ''} ${it._outside ? 'outside' : ''} ${missingOffline(it) ? 'offline-missing' : ''} ${state.selection.has(it.id) ? 'selected' : ''}" role="row" data-id="${escapeHtml(it.id)}" data-index="${index}" draggable="${drag}">${cells}</div>`;
   if (state.expanded.has(it.id)) {
     for (const a of it.attachments || []) {
-      html += `<div class="row child" data-parent="${it.id}" data-att="${a.id}"><div class="cell">${icon('pdf', 'icon-sm')}<span>${escapeHtml(a.name || 'Attachment')}</span></div></div>`;
+      html += `<div class="row child${notSaved(a) ? ' offline-missing' : ''}" data-parent="${it.id}" data-att="${a.id}"${notSaved(a) ? ' title="Not saved for offline use"' : ''}><div class="cell">${icon('pdf', 'icon-sm')}<span>${escapeHtml(a.name || 'Attachment')}</span></div></div>`;
     }
   }
   const snip = state.hits[it.id]?.fulltext;

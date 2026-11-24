@@ -274,6 +274,11 @@ a passkey. Read the [Notes guide](docs/notes.md) for the note format,
 [Plugins](docs/plugins.md) for installation and permissions, and the
 [authoring guide](docs/plugin-authoring.md) to build a plugin.
 
+**Offline use** is off until you turn it on, per browser, in **Settings → Offline Use**. It then saves the
+app, your library and your PDFs on that device, so they open without a connection (an iPad on a
+train, a laptop when the server is away); offline, papers whose PDF is not saved are dimmed.
+See [Offline use](docs/offline.md).
+
 The [architecture map](docs/architecture.md) links each subsystem and explains where code goes.
 
 ## AI access (MCP)

@@ -57,3 +57,27 @@ def test_builds_when_the_tools_are_there(tree, monkeypatch):
     monkeypatch.setattr(F.subprocess, "run", run)
     assert F.ensure_built(tree) is True
     assert calls == [(["/usr/bin/node", "build.mjs"], tree)]
+
+
+def test_shell_lists_what_the_app_loads_and_changes_with_it(tree):
+    for name, text in {
+        "viewer.html": "<html>",
+        "index.html": "<html>",
+        "js/main.js": "x",
+        "js/main.js.map": "{}",
+        "css/base.css": "a{}",
+        "vendor/pdfjs/worker.mjs": "w",
+        "vendor/README.md": "# x",
+    }.items():
+        (tree / name).parent.mkdir(parents=True, exist_ok=True)
+        (tree / name).write_text(text)
+    shell = F.shell_files(tree)
+    assert shell["files"] == ["/", "/viewer.html", "/js/main.js", "/css/base.css", "/vendor/pdfjs/worker.mjs"]
+    assert F.shell_files(tree)["version"] == shell["version"]
+    (tree / "js" / "main.js").write_text("changed")
+    assert F.shell_files(tree)["version"] != shell["version"]
+
+
+def test_shell_is_served(client):
+    got = client.get("/api/offline/shell").get_json()
+    assert "/" in got["files"] and "/viewer.html" in got["files"] and got["version"]

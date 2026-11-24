@@ -2,9 +2,10 @@
 // (what to do with it, its abstract, the notes that cite it, its folders and tags, what plugins
 // add) and its details and references.
 import * as A from '../actions.js';
-import { api, type ApiError } from '../api.js';
+import { api, attachmentOpensOffline, type ApiError } from '../api.js';
 import { itemActions, itemSections } from '../extend.js';
 import { icon } from '../icons.js';
+import { OFFLINE_EVENT, offlineNow } from '../offline.js';
 import { emit, fieldText, folderById, folderTree, itemTypeLabel, off, on, sortedItems, state, saveSort } from '../store.js';
 import type { Attachment, Item, ItemFieldValue, ItemNotes } from '../types.js';
 import { promptDialog, confirmDialog } from '../ui/dialog.js';
@@ -39,8 +40,20 @@ function viewTitle(view: string): string {
   return 'Library';
 }
 
+/** Offline: none of a paper's PDFs is saved on this device (a paper with no PDF is just its record). */
+const missingOffline = (it: Item) => {
+  const pdfs = (it.attachments || []).filter((a) => a.type === 'pdf');
+  return pdfs.length > 0 && !pdfs.some((a) => attachmentOpensOffline(a));
+};
+
+// Going offline (or coming back) redraws the lists, so the papers that are not saved show as such.
+let marked = false;
+window.addEventListener(OFFLINE_EVENT, () => {
+  if (marked || offlineNow()) { marked = offlineNow(); if (document.body.classList.contains('phone')) emit('items'); }
+});
+
 const marksOf = (it: Item) => [
-  it.attachments?.length ? `<span class="ph-mark pdf" title="Has a PDF">${icon('pdf')}</span>` : '',
+  it.attachments?.length ? `<span class="ph-mark pdf${missingOffline(it) ? ' offline-missing' : ''}" title="${missingOffline(it) ? 'Not saved for offline use' : 'Has a PDF'}">${icon('pdf')}</span>` : '',
   state.noteKeys[String(it.citation_key)] ? `<span class="ph-mark" title="In your notes">${icon('edit')}</span>` : '',
 ].join('');
 
@@ -304,7 +317,7 @@ function itemHtml(it: Item): string {
         ? `<button class="ph-tag add" data-act="organize" aria-label="Add to a folder or tag">${icon('plus')}</button>`
         : `<button class="ph-tag add wide" data-act="organize">${icon('plus')}Add to a folder or tag</button>`}</div>
       ${(it.attachments || []).map((a) => `<div class="ph-attachment">
-        <button class="ph-link-row" data-att="${a.id}">${icon('pdf')}<span>${esc(a.name || 'PDF')}</span>${chevron()}</button>
+        <button class="ph-link-row${attachmentOpensOffline(a) ? '' : ' offline-missing'}" data-att="${a.id}">${icon('pdf')}<span>${esc(a.name || 'PDF')}</span>${chevron()}</button>
         ${it.deleted_at ? '' : navButton('more', `Actions for ${a.name || 'PDF'}`, `data-att-menu="${a.id}" aria-haspopup="menu"`)}
       </div>`).join('')}
       <button class="ph-link-row" data-act="refs">${icon('link')}<span>References and citations</span>${chevron()}</button>

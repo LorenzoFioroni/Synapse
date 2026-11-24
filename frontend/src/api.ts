@@ -6,6 +6,8 @@ import type {
   ItemFieldValue, NoteLocks, NoteLockState, Passkey, PasskeysOverview, PdfImport, PluginField, PluginInfo, PluginSource, PluginsOverview, RenamePlan, Schema, Settings, SettingsResponse, SmartFolder, Stats, Tag, Task,
   TaskChanges, TaskHistoryEntry, TaskRef, TasksOverview, UpdaterState, UpdateStatus, RemoteBackupSetup, RemoteBackupConfiguration, Backup,
 } from './types.js';
+import { offlineNow, pdfSaved } from './offline.js';
+import { toast } from './ui/toast.js';
 import { openNewWindow, openPageInNewWindow } from './windows.js';
 
 export class ApiError extends Error {
@@ -342,8 +344,14 @@ export function openPdfInNewWindow(item: Pick<Item, 'id' | 'title'>, att: Pick<A
   else openPageInNewWindow(url);
 }
 
+/** False while offline for a PDF that was never saved (Settings → Offline Use); links open as before. */
+export function attachmentOpensOffline(att: Pick<Attachment, 'id' | 'url'> & { type?: string }): boolean {
+  return !offlineNow() || (att.type !== undefined && att.type !== 'pdf') || pdfSaved(fileUrl(att));
+}
+
 /** Open a PDF in the viewer, reusing its tab when it has one (see above). */
 export function openAttachment(item: Pick<Item, 'id' | 'title'>, att: Pick<Attachment, 'id' | 'url'>, page?: number | null, at: ViewerSpot = {}, { newTab = false } = {}): void {
+  if (!attachmentOpensOffline(att)) { toast('This PDF is not saved on this device, so it cannot be opened offline.', { type: 'error' }); return; }
   if (openInApp(item, att, page, at, newTab)) return;
   const w = !newTab && viewerTab(att);
   if (w) return reuseTab(w, page, at);

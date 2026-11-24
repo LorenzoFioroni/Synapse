@@ -1,5 +1,6 @@
 // The current value beside some navigation entries (shown on phones, where the navigation is the
 // first list you see: General · System, Backups · Daily…).
+import { offlineEnabled } from '../../offline.js';
 import { state } from '../../store.js';
 
 const LABELS: Record<string, (s: typeof state.settings) => string> = {
@@ -7,6 +8,7 @@ const LABELS: Record<string, (s: typeof state.settings) => string> = {
   notes: (s) => (s.notes_enabled ? '' : 'Off'),
   viewer: (s) => (s.pdf_open_in === 'browser' ? 'Browser tabs' : 'Synapse tabs'),
   citekeys: (s) => (state.settingsMeta.citekeyPresets || []).find((p) => p.pattern === s.citekey_pattern)?.label.replace(/\s*\(.*$/, '') || 'Custom',
+  offline: () => (offlineEnabled() ? 'On' : 'Off'),
   backups: (s) => ({ off: 'Off', daily: 'Daily', weekly: 'Weekly' })[s.backup_interval] || '',
 };
 

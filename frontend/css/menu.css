@@ -24,3 +24,10 @@
 .menu-label { padding: 6px 9px 3px; font-size: var(--fs-xs); color: var(--text-3); font-weight: 600; text-transform: uppercase; letter-spacing: .04em; }
 
 @keyframes pop { from { opacity: 0; transform: scale(.97); } to { opacity: 1; transform: none; } }
+
+/* The offline pill (frontend/src/offline.ts), also shown by the viewer's own page. */
+.zc-offline-pill {
+  position: fixed; left: 50%; bottom: 14px; transform: translateX(-50%); z-index: 99999; padding: 5px 12px;
+  border-radius: 999px; font-size: var(--fs-xs); line-height: 1.4; background: var(--text); color: var(--bg);
+  box-shadow: var(--shadow-md); pointer-events: none; max-width: calc(100vw - 32px); text-align: center;
+}

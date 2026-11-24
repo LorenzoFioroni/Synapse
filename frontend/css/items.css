@@ -91,3 +91,11 @@
   .row.snippet .cell { display: block; padding: 2px 14px 10px 42px; }
   .list-empty { inset: 36px 0 0; }
 }
+
+/* Offline (Settings → Offline Use): papers whose PDF was never saved on this device. */
+.row.offline-missing:not(.selected) .cell:not(.c-attachments) { opacity: .5; }
+.offline-missing { position: relative; }
+.pdf-dot.offline-missing { opacity: .55; color: var(--text-3); }
+.pdf-dot.offline-missing::after, .ph-mark.offline-missing::after {
+  content: ""; position: absolute; left: 15%; right: 15%; top: 50%; border-top: 1.5px solid currentColor; transform: rotate(-45deg);
+}

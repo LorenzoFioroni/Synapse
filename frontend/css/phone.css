@@ -384,3 +384,6 @@ body.phone #notification-center { left: 8px; right: 8px; width: auto; max-width:
 .ph-badges.small { margin-bottom: 1px; }
 .ph-badges.small .ph-badge { height: 20px; padding: 0 7px; font-size: 11.5px; }
 .ph-badges.small .ph-badge .icon { width: 11px; height: 11px; }
+
+.ph-mark.offline-missing { position: relative; opacity: .55; color: var(--text-3); }
+.ph-link-row.offline-missing { opacity: .55; }

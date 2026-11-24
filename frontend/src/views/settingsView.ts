@@ -13,6 +13,7 @@ import type { SearchMode, Settings } from '../types.js';
 import { debounce, escapeHtml, formatBytes, formatDate, plural, store } from '../util.js';
 import { baseMacros } from './notes/macros.js';
 import { bindBackups, refreshBackups } from './settings/backups.js';
+import { bindOffline } from './settings/offline.js';
 import { bindUpdates, refreshUpdates } from './settings/updates.js';
 import { bindAiAccess, forgetFreshToken, refreshAiAccess } from './settings/aiAccess.js';
 import { bindDevices, cancelPairing, refreshDevices } from './settings/devices.js';
@@ -32,6 +33,7 @@ on('export-formats', () => { if (view) refreshExportFormats(view); });
 let unmountPluginSections: (() => void) | null = null;
 let statsTimer: ReturnType<typeof setInterval> | undefined;
 let unbindBackups: (() => void) | undefined;
+let unbindOffline: (() => void) | undefined;
 /** The section shown, and the plugin last shown beside the Plugins list. */
 let currentId = 'general';
 let lastPlugin: string | null = null;
@@ -128,6 +130,8 @@ export function closeSettings(): void {
   clearInterval(statsTimer);
   unbindBackups?.();
   unbindBackups = undefined;
+  unbindOffline?.();
+  unbindOffline = undefined;
   cancelPairing();
   forgetFreshToken();
   view.remove();
@@ -326,6 +330,7 @@ function bind(view: HTMLElement): void {
   bindPasskeys(view);
   bindAiAccess(view);
   unbindBackups = bindBackups(view);
+  unbindOffline = bindOffline(view);
   bindUpdates(view);
   bindPlugins(view, (id) => setNav(id));
 

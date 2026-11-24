@@ -11,12 +11,13 @@ so ``python server.py`` keeps working after a ``git pull`` (it needs Node.js and
 
 from __future__ import annotations
 
+import hashlib
 import logging
 import shutil
 import subprocess
 from pathlib import Path
 
-from flask import Blueprint, current_app, send_from_directory
+from flask import Blueprint, current_app, jsonify, send_from_directory
 
 log = logging.getLogger(__name__)
 
@@ -58,12 +59,43 @@ def apple_touch_icon():
     return send_from_directory(_frontend() / "assets", "apple-touch-icon.png", mimetype="image/png")
 
 
+@bp.get("/api/offline/shell")
+def offline_shell():
+    """The files of the web app, for a browser that keeps a copy for offline use (docs/offline.md)."""
+    resp = jsonify(shell_files(_frontend()))
+    resp.headers["Cache-Control"] = NO_CACHE
+    return resp
+
+
 @bp.get("/<path:path>")
 def static_files(path):
     resp = send_from_directory(_frontend(), path)
     if path.endswith((".html", ".js", ".css")):
         resp.headers["Cache-Control"] = NO_CACHE
     return resp
+
+
+# ----------------------------------------------------------------------------- offline copy
+SHELL_DIRS = ("js", "css", "assets", "vendor")
+SHELL_PAGES = ("viewer.html", "manifest.webmanifest")
+SHELL_SKIP = (".map", ".md")  # sources of the scripts and licence notes: not needed to run
+
+
+def shell_files(frontend: Path) -> dict:
+    """The URLs of the pages, scripts, styles, fonts and images the app loads, and a ``version``
+    that changes when any of them does (so a browser knows when to save them again)."""
+    paths = ["/"] + ["/" + name for name in SHELL_PAGES if (frontend / name).is_file()]
+    digest = hashlib.sha1()
+    for folder in SHELL_DIRS:
+        for f in sorted((frontend / folder).rglob("*")):
+            if f.is_file() and not f.name.endswith(SHELL_SKIP) and not f.name.startswith("."):
+                paths.append("/" + f.relative_to(frontend).as_posix())
+    for url in paths[1:]:
+        st = (frontend / url[1:]).stat()
+        digest.update(f"{url}:{st.st_size}:{st.st_mtime_ns}\n".encode())
+    if (frontend / "index.html").is_file():
+        digest.update(f"/:{(frontend / 'index.html').stat().st_mtime_ns}".encode())
+    return {"version": digest.hexdigest()[:16], "files": paths}
 
 
 # ----------------------------------------------------------------------------- build

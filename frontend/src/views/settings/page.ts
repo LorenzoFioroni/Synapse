@@ -32,6 +32,7 @@ export const NAV_GROUPS: [string, NavEntry[]][] = [
   ['Data & access', [
     ['backups', 'Backups', 'restore', '#1f9d55'],
     ['devices', 'Devices', 'tablet', '#3a4352'],
+    ['offline', 'Offline Use', 'download', '#0f8b8d'],
     ['ai', 'AI Access', 'sparkle', '#b3202c'],
   ]],
   ['Extend', [
@@ -328,6 +329,22 @@ export function settingsHtml(s: Settings, meta: Partial<SettingsResponse>): stri
             <div class="s-desc" data-passkeys-desc>Loading…</div></div>
             <div class="s-control" data-passkey-control></div></div>
             <div class="backup-list" data-passkey-list></div></div>
+        </div></section>
+
+      <section class="settings-section" id="set-offline">${head('offline', 'Offline Use', 'Keep the app, your library and your PDFs on this device, so they open without a connection. This is a choice for each browser, and it is off until you turn it on.')}
+        <div class="card">
+          <div class="setting"><div class="s-text"><div class="s-title">Use Synapse offline on this device</div>
+            <div class="s-desc" data-offline-desc></div></div>
+            <div class="s-control"><label class="switch"><input type="checkbox" data-offline-switch aria-label="Use Synapse offline on this device"><span></span></label></div></div>
+          <div class="setting stack" data-offline-status hidden>
+            <div class="setting-line"><div class="s-text"><div class="s-title" data-offline-title></div>
+              <div class="s-desc" data-offline-detail></div></div>
+              <div class="s-control"><button class="btn" data-offline-sync>${icon('refresh')} Save Now</button></div></div>
+            <div class="progress" data-offline-progress hidden><div></div></div>
+          </div>
+          <div class="setting stack"><div class="s-text"><div class="s-title">While offline</div>
+            <div class="s-desc">Papers whose PDF is saved open as usual; the others are dimmed in the list, and say so when you open them.
+              Highlights and notes you add to a PDF are kept and sent once Synapse answers again. Searching, other folders, notes and library edits need a connection.</div></div></div>
         </div></section>
 
       <section class="settings-section" id="set-ai">${head('ai', 'AI Access', `Let AI apps on another computer (Claude Code, Codex, any MCP app) use the library over the network.
