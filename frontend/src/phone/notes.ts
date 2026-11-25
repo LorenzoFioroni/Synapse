@@ -1,7 +1,7 @@
 // The Notes tab on a phone: recent notes and folders, search; a note opens for reading (citations
 // as chips, a tap on one shows what it cites) and Edit turns it into the editor, with a bar of
 // Markdown helpers above the keyboard (plugins add their own buttons there).
-import { api, type ApiError, notePdfAtt } from '../api.js';
+import { api, type ApiError, notePdfAtt, openLocalPdf } from '../api.js';
 import { editorButtons } from '../extend.js';
 import { icon } from '../icons.js';
 import { off, on, state } from '../store.js';
@@ -450,6 +450,7 @@ export function noteScreen(path: string, { line = null, edit = false }: { line?:
 async function pushPdf(path: string, heading: string, spot: CiteTarget | null): Promise<void> {
   const pdf = findPdf(path);
   if (!pdf) { toast(`“${path}” is not in the notes folders.`); return; }
+  if (pdf.id < 0) { openLocalPdf(pdf.id); return; }   // added offline: not in Synapse yet
   const at = await viewerTarget(spot).catch(() => ({} as { q?: string }));
   push(readerScreen({ id: '', title: pdf.name.replace(/\.pdf$/i, ''), authors: '', year: undefined }, notePdfAtt(pdf), pdfPage(heading), { q: at.q }));
 }

@@ -7,7 +7,7 @@ import type {
   TaskChanges, TaskHistoryEntry, TaskRef, TasksOverview, UpdaterState, UpdateStatus, RemoteBackupSetup, RemoteBackupConfiguration, Backup,
 } from './types.js';
 import { offlineNow, pdfSaved } from './offline.js';
-import { notesOffline } from './offlineNotes.js';
+import { localPdf, notesOffline } from './offlineNotes.js';
 import { toast } from './ui/toast.js';
 import { openNewWindow, openPageInNewWindow } from './windows.js';
 
@@ -215,11 +215,13 @@ export const api = {
     move: (path: string, to: string) => request<NoteMoved>('POST', '/api/notes/move', { path, to }),
     moveFolder: (path: string, to: string) => request<NoteMoved>('POST', '/api/notes/folder/move', { path, to }),
     newFolder: (path: string) => request<{ path: string }>('POST', '/api/notes/folder', { path }),
+    folderColor: (path: string, color: string | null) => request('PUT', '/api/notes/folder/color', { path, color }),
+    addPdf: (file: Blob, path: string) => { const fd = new FormData(); fd.append('file', file, path.replace(/^.*\//, '')); fd.append('folder', path.replace(/\/?[^/]*$/, '')); return request<NotePdf>('POST', '/api/notes/pdf', fd); },
     trash: (paths: string[], folders: string[]) => request<{ trash_id: string; paths: string[]; pdfs: string[] }>('POST', '/api/notes/trash', { paths, folders }),
     /** Whether Synapse still has the note as ``hash`` (false: changed meanwhile). */
     unchanged: (path: string, hash: string) => request<{ unchanged?: boolean }>('GET', `/api/notes/note?${qs({ path, unless: hash })}`).then((r) => !!r.unchanged),
   },
-  setNoteFolderColor: (path: string, color: string | null) => request<{ folder_colors: Record<string, string> }>('PUT', '/api/notes/folder/color', { path, color }),
+  setNoteFolderColor: (path: string, color: string | null) => notesOffline.folderColor(path, color, () => request<{ folder_colors: Record<string, string> }>('PUT', '/api/notes/folder/color', { path, color })),
   restoreNoteBatch: (trashId: string) => notesOffline.restore(trashId, (id) => request<{ paths: string[]; pdfs: string[]; skipped: string[] }>('POST', '/api/notes/restore', { trash_id: id })),
   noteKeys: () => request<{ keys: NoteKeys }>('GET', '/api/notes/keys'),
   // reference lists (citation graph)
@@ -252,7 +254,7 @@ export const api = {
   taskHistory: (id: string) => request<{ history: TaskHistoryEntry[] }>('GET', `/api/tasks/${id}/history`),
   undoTaskChange: (historyId: number) => request<{ task: Task }>('POST', '/api/tasks/undo', { history_id: historyId }),
   rescanNotes: () => request<{ added: number; changed: number; removed: number }>('POST', '/api/notes/rescan'),
-  uploadNotePdf: (file: File, folder: string) => { const fd = new FormData(); fd.append('file', file); fd.append('folder', folder); return request<NotePdf>('POST', '/api/notes/pdf', fd); },
+  uploadNotePdf: (file: File, folder: string) => notesOffline.addPdf(file, folder, () => { const fd = new FormData(); fd.append('file', file); fd.append('folder', folder); return request<NotePdf>('POST', '/api/notes/pdf', fd); }),
   uploadNoteImage: (file: File) => { const fd = new FormData(); fd.append('file', file); return request<{ path: string; markdown: string }>('POST', '/api/notes/attachments', fd); },
 };
 
@@ -379,7 +381,14 @@ export function openAttachment(item: Pick<Item, 'id' | 'title'>, att: Pick<Attac
   if (win) pdfTabs.set(fileUrl(att), win);
 }
 
+/** A PDF added offline, not yet in Synapse: the browser's own viewer shows it (Synapse's needs its number). */
+export function openLocalPdf(id: number): void {
+  const blob = localPdf(id);
+  if (blob) window.open(URL.createObjectURL(blob), '_blank', 'noopener');
+}
+
 /** Open a PDF kept in a notes folder in the viewer (an app tab, or a browser tab: see Settings → PDF Viewer). */
 export function openNotePdf(pdf: Pick<NotePdf, 'id' | 'path'>, page?: number | null, at: ViewerSpot = {}, opts: { newTab?: boolean } = {}): void {
+  if (pdf.id < 0) { openLocalPdf(pdf.id); return; }
   openAttachment({ id: '', title: pdf.path.split('/').pop()!.replace(/\.pdf$/i, '') }, notePdfAtt(pdf), page, at, opts);
 }

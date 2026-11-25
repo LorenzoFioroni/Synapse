@@ -9,13 +9,13 @@
 // phone need no changes: a local save answers with a local hash ("local:…"), and once the edits
 // are in, the session's regular check sees the note's real hash and takes its text.
 //
-// Notes, folders and the PDFs of the notes folder can also be renamed, moved, deleted (and folders
-// created) offline: each change is kept, in order, in a log of place changes (``PlaceOp``). The
+// Notes, folders and the PDFs of the notes folder can also be renamed, moved, deleted (folders
+// created and coloured, PDFs added) offline: each change is kept, in order, in a log of place changes (``PlaceOp``). The
 // listing shows Synapse's notes with the log applied; a kept note's record follows the changes
 // (``origin`` is where Synapse has it). offlineSync.ts makes the changes in Synapse in the same
 // order, before the notes' edits go in.
 import { offlineEnabled, offlineNow } from './offline.js';
-import type { NoteFile, NoteMoved, NotesListing } from './types.js';
+import type { NoteFile, NoteMoved, NotePdf, NotesListing } from './types.js';
 
 const DB = 'synapse-offline-notes';
 const STORE = 'notes';
@@ -63,6 +63,9 @@ export interface LocalNote {
 /** A change of place made offline, made in Synapse later in the same order. */
 export type PlaceOp = { seq?: number; at: number } & (
   | { kind: 'mkdir'; path: string }
+  | { kind: 'color'; path: string; color: string | null }
+  /** A PDF added offline: the file itself, and the number (negative) it is listed by until Synapse has it. */
+  | { kind: 'pdf'; path: string; file: Blob; size: number; id: number }
   | { kind: 'move'; what: 'note' | 'pdf' | 'folder'; from: string; to: string }
   /** ``seen``: what this device knew of the notes and PDFs it deletes (a note's time, a PDF's size):
    *  one changed or added in Synapse meanwhile is not deleted. */
@@ -148,6 +151,30 @@ async function addOp(op: PlaceOp): Promise<void> {
   op.seq = await tx<IDBValidKey>('readwrite', (s) => s.add(op), PLACES) as number;
   ops.push(op);
   changed();
+}
+
+/** Saves a change of ``op`` made while the log is sent (``retarget``). */
+const rewriteOp = (op: PlaceOp) => tx('readwrite', (s) => s.put(op), PLACES);
+
+/** Synapse put a PDF added offline at ``to`` instead of ``from`` (the name was taken meanwhile):
+ *  the changes after it follow. */
+export async function retarget(from: string, to: string): Promise<void> {
+  for (const op of ops) {
+    let hit = false;
+    if (op.kind === 'move' && op.from === from) { op.from = to; hit = true; }
+    if (op.kind === 'trash' && (op.paths.includes(from) || from in op.seen)) {
+      op.paths = op.paths.map((p) => (p === from ? to : p));
+      if (from in op.seen) { op.seen[to] = op.seen[from]; delete op.seen[from]; }
+      hit = true;
+    }
+    if (hit) await rewriteOp(op);
+  }
+}
+
+/** A PDF added offline, by the number it is listed with (opened in the browser's own viewer). */
+export function localPdf(id: number): Blob | null {
+  const op = ops.find((o) => o.kind === 'pdf' && o.id === id) as Extract<PlaceOp, { kind: 'pdf' }> | undefined;
+  return op?.file ?? null;
 }
 
 /** Synapse made the change (or refused it): it leaves the log. */
@@ -377,6 +404,42 @@ export const notesOffline = {
     }
   },
 
+  /** A folder's colour (``#rrggbb``, or null for none). */
+  async folderColor(path: string, color: string | null, net: Net<{ folder_colors: Record<string, string> }>): Promise<{ folder_colors: Record<string, string> }> {
+    await loadNotes();
+    const local = async () => {
+      await logOp({ kind: 'color', path: cleanFolder(path), color: color || null, at: Date.now() });
+      return { folder_colors: { ...(view?.folder_colors || {}) } };
+    };
+    if (placeHere()) return local();
+    try { return await net(); } catch (e) {
+      if (!placeHere(e)) throw e;
+      return local();
+    }
+  },
+
+  /** Add a PDF to a notes folder: in Synapse, or here (the file waits in IndexedDB). */
+  async addPdf(file: File, folder: string, net: Net<NotePdf>): Promise<NotePdf> {
+    await loadNotes();
+    const local = async (): Promise<NotePdf> => {
+      if (!(await file.slice(0, 1024).text()).includes('%PDF-')) {
+        throw Object.assign(new Error(`“${file.name}” is not a PDF. Only PDF files can be added to the notes.`), { status: 415 });
+      }
+      const dir = cleanFolder(folder);
+      const name = file.name.replace(/[\\/:*?"<>|#^[\]]+/g, ' ').replace(/\s+/g, ' ').trim().replace(/(?:\.pdf)?$/i, '.pdf');
+      let path = `${dir ? `${dir}/` : ''}${name}`;
+      for (let i = 2; taken(path); i++) path = path.replace(/(?: \d+)?\.pdf$/i, ` ${i}.pdf`);
+      const id = -(Date.now() * 100 + (localSeq++ % 100));
+      await logOp({ kind: 'pdf', path, file, size: file.size, id, at: Date.now() });
+      return { id, path, name: baseName(path), size: file.size };
+    };
+    if (placeHere()) return local();
+    try { return await net(); } catch (e) {
+      if (!placeHere(e)) throw e;
+      return local();
+    }
+  },
+
   /** Move notes, PDFs and folders to the notes trash. */
   async trash<T extends { trash_id: string; paths: string[]; pdfs: string[] }>(paths: string[], folders: string[], net: Net<T>): Promise<T | { trash_id: string; paths: string[]; pdfs: string[] }> {
     await loadNotes();
@@ -459,6 +522,15 @@ function taken(p: string): boolean {
 /** The listing after ``op``. */
 function applyToListing(r: NotesListing, op: PlaceOp): NotesListing {
   if (op.kind === 'mkdir') return { ...r, folders: withParents(r.folders, [op.path]) };
+  if (op.kind === 'color') {
+    const colors = { ...(r.folder_colors || {}) };
+    if (op.color) colors[op.path] = op.color; else delete colors[op.path];
+    return { ...r, folder_colors: colors };
+  }
+  if (op.kind === 'pdf') {
+    if ((r.pdfs || []).some((x) => x.path === op.path)) return r;
+    return { ...r, pdfs: [...(r.pdfs || []), { id: op.id, path: op.path, name: baseName(op.path), size: op.size }], folders: withParents(r.folders, [parentOf(op.path)]) };
+  }
   if (op.kind === 'trash') {
     const gone = (p: string) => op.paths.includes(p) || op.folders.some((f) => within(p, f));
     return { ...r, notes: r.notes.filter((n) => !gone(n.path)), pdfs: r.pdfs?.filter((x) => !gone(x.path)), folders: r.folders.filter((f) => !gone(f)) };

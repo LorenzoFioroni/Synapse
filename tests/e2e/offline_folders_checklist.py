@@ -1,5 +1,6 @@
 """Browser checklist for changing folders and the PDFs of the notes folder offline (docs/offline.md):
-a folder is created, renamed, moved and deleted, a PDF renamed, moved and deleted, without Synapse;
+a folder is created, coloured, renamed, moved and deleted, a PDF added, renamed, moved and deleted,
+without Synapse;
 the changes show at once, survive a reload, and go into Synapse in order once it answers again (a
 folder holding a note changed in Synapse meanwhile keeps that note).
 
@@ -9,6 +10,7 @@ Starts its own server on port 8877 with a throw-away data folder. Your library i
 """
 
 import asyncio
+import base64
 import shutil
 import subprocess
 import sys
@@ -28,6 +30,14 @@ BASE = f"http://127.0.0.1:{PORT}"
 DATA = tempfile.mkdtemp(prefix="zc-offline-folders-e2e-")
 PDF = APP / "tests" / "e2e" / "fixtures" / "twocolumn.pdf"
 results = []
+
+# Drop a file on a tree row the way the browser does (a real OS drag cannot be driven from here).
+DROP = """([sel, name, b64]) => {
+  const dt = new DataTransfer();
+  dt.items.add(new File([Uint8Array.from(atob(b64), c => c.charCodeAt(0))], name, { type: 'application/pdf' }));
+  const el = document.querySelector(sel);
+  for (const t of ['dragenter', 'dragover', 'drop']) el.dispatchEvent(new DragEvent(t, { dataTransfer: dt, bubbles: true, cancelable: true }));
+}"""
 
 SERVER = f"""
 import sys
@@ -180,6 +190,25 @@ async def main():
             await page.wait_for_selector(folder(f), state="detached", timeout=10000)
         check("folders are deleted offline", True)
 
+        await menu(page, folder("Ideas"), "Green")
+        await page.wait_for_timeout(500)
+        style = await page.locator(folder("Ideas")).inner_html()
+        check("a folder is coloured offline", "#30a46c" in style.lower() or "48, 164, 108" in style, style[:200])
+
+        await page.evaluate(DROP, [folder("Docs"), "Field notes.pdf", base64.b64encode(PDF.read_bytes()).decode()])
+        await expand(page, "Docs")
+        await page.wait_for_selector(pdf("Docs/Field notes.pdf"), timeout=10000)
+        check("a PDF is added to a folder offline", True)
+        async with ctx.expect_page(timeout=10000) as shown:
+            await page.dblclick(pdf("Docs/Field notes.pdf"))
+        tab = await shown.value  # headless Chromium downloads a PDF instead of showing it: the tab is the check
+        check("… and opens offline, in a tab of its own (the browser's viewer)", tab is not None)
+        await tab.close()
+        await menu(page, pdf("Docs/Field notes.pdf"), "Rename…")
+        await prompt(page, "Field")
+        await page.wait_for_selector(pdf("Docs/Field.pdf"), timeout=10000)
+        check("… and renamed offline", True)
+
         await menu(page, pdf("paper.pdf"), "Rename…")
         await prompt(page, "Article")
         await page.wait_for_selector(pdf("Article.pdf"), timeout=10000)
@@ -205,6 +234,7 @@ async def main():
             "Ideas/Old": await page.locator(folder("Ideas/Old")).count() == 1,
             "no Keep": await page.locator(folder("Keep")).count() == 0,
             "Article": await page.locator(pdf("Article.pdf")).count() == 1,
+            "Field": await page.locator(pdf("Docs/Field.pdf")).count() == 1,
             "no gone": await page.locator(pdf("gone.pdf")).count() == 0,
         }
         check("they survive a reload offline", all(same.values()), str(same))
@@ -227,6 +257,7 @@ async def main():
         notes = {n["path"] for n in r["notes"]}
         pdfs = {x["path"] for x in r.get("pdfs", [])}
         check("the new folder is in Synapse", "Ideas" in r["folders"], str(r["folders"]))
+        check("its colour too", r.get("folder_colors", {}).get("Ideas") == "#30a46c", str(r.get("folder_colors")))
         check(
             "the renamed folder is in Synapse, with its notes",
             "Proj" not in r["folders"] and {"Project/a.md", "Project/b.md"} <= notes,
@@ -248,8 +279,9 @@ async def main():
             str(sorted(n for n in notes if n.startswith("Busy"))),
         )
         check(
-            "the PDFs are renamed, moved and deleted in Synapse",
-            {"Article.pdf", "Docs/loose.pdf"} <= pdfs and not pdfs & {"paper.pdf", "loose.pdf", "gone.pdf"},
+            "the PDFs are added, renamed, moved and deleted in Synapse",
+            {"Article.pdf", "Docs/loose.pdf", "Docs/Field.pdf"} <= pdfs
+            and not pdfs & {"paper.pdf", "loose.pdf", "gone.pdf"},
             str(sorted(pdfs)),
         )
         await page.wait_for_timeout(1500)

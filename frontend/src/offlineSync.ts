@@ -4,7 +4,7 @@
 // by one, when the user makes them available offline (offlineMenuEntry). See docs/offline.md.
 import { api, fileUrl } from './api.js';
 import { OFFLINE_EVENT, forgetFiles, offlineEnabled, offlineNow, offlineSupported, pdfSaved, pruneFiles, refreshSaved, removeOfflineCopy, saveFiles, setOfflineFlag, startOffline } from './offline.js';
-import { PLACES_EVENT, type LocalNote, type PlaceOp, chosen, chosenPaths, dropNote, dropOp, folderChosen, setChosen, loadNotes, localNote, localNotes, notePending, noteChosen, originsAfter, originsGone, placeOps, putNote, removeLocalNotes, sentTrash, setNotesPusher, settleRecords, unreachable } from './offlineNotes.js';
+import { PLACES_EVENT, type LocalNote, type PlaceOp, chosen, chosenPaths, dropNote, dropOp, folderChosen, setChosen, loadNotes, localNote, localNotes, notePending, noteChosen, originsAfter, originsGone, placeOps, retarget, putNote, removeLocalNotes, sentTrash, setNotesPusher, settleRecords, unreachable } from './offlineNotes.js';
 import { flushQueue, loadQueue, queuedCount, removeQueue, setBeforeFlush } from './plugins/offlineQueue.js';
 import { emit } from './store.js';
 import type { Attachment, Item } from './types.js';
@@ -174,6 +174,11 @@ async function pushPlaces(): Promise<boolean> {
   for (const op of placeOps()) {
     try {
       if (op.kind === 'mkdir') await api.offlineNoteOps.newFolder(op.path);
+      else if (op.kind === 'color') await api.offlineNoteOps.folderColor(op.path, op.color);
+      else if (op.kind === 'pdf') {
+        const r = await api.offlineNoteOps.addPdf(op.file, op.path);
+        if (r.path !== op.path) await retarget(op.path, r.path);
+      }
       else if (op.kind === 'move') {
         await (op.what === 'folder' ? api.offlineNoteOps.moveFolder(op.from, op.to) : api.offlineNoteOps.move(op.from, op.to));
         await originsAfter(op);
@@ -184,6 +189,8 @@ async function pushPlaces(): Promise<boolean> {
         if (status(e) === 404) await originsGone(op);
         refused.push(`“${nameOf(op.from)}” could not be ${op.what === 'folder' || op.from.replace(/[^/]*$/, '') === op.to.replace(/[^/]*$/, '') ? 'renamed' : 'moved'} to “${op.to}”: ${why(e)}`);
       } else if (op.kind === 'trash') refused.push(`Something could not be deleted: ${why(e)}`);
+      else if (op.kind === 'pdf') refused.push(`“${nameOf(op.path)}” could not be added: ${why(e)}`);
+      else if (op.kind === 'color') refused.push(`The folder “${op.path}” could not be coloured: ${why(e)}`);
       else refused.push(`The folder “${op.path}” could not be made: ${why(e)}`);
     }
     await dropOp(op);

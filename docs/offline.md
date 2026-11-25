@@ -52,13 +52,17 @@ The note calls of `api.ts` (`getNote`, `checkNote`, `saveNote`, `createNote`, `n
   and the time it was made; saves less than 2 minutes apart are one version). The save answers with
   a local hash (`local:…`), and the note keeps saving locally until its versions are in Synapse. An
   amber dot marks it. **New notes** can be created offline (the listing shows them). Notes (kept or
-  not), **folders** (new, renamed, moved, deleted) and the **PDFs of the notes folder** (renamed,
-  moved, deleted) can be changed offline too, Undo included: each change goes, in order, into a log
+  not), **folders** (new, renamed, moved, deleted, coloured) and the **PDFs of the notes folder**
+  (added, renamed, moved, deleted) can be changed offline too, Undo included: each change goes, in order, into a log
   of place changes (IndexedDB `synapse-offline-notes` / `places`, `PlaceOp`), and the listing shows
   Synapse's notes with the log applied, at once. A kept note's record follows the changes (its
   `origin` is where Synapse has it meanwhile); a PDF keeps its number, so a saved copy still opens.
+  A PDF added offline waits in the log itself (the file, as a Blob) and is listed with a negative
+  number; until Synapse has it, it opens in the browser's own viewer (an iPad shows it, Chrome on
+  Android downloads it), and highlights wait for Synapse's viewer. Should Synapse give it another
+  name (taken meanwhile), the changes after it follow (`retarget`).
   While changes wait, later ones are logged too even with Synapse answering, so they go in in order.
-  Locking notes and folder colours need Synapse, and say so.
+  Locking notes needs Synapse.
 - **Back online** (the browser's `online` event, or Synapse answering again), `pushNotes`
   (`offlineSync.ts`) first makes the logged changes in Synapse, in order (`pushPlaces`): Synapse
   updates links to what moved as usual. A deletion deletes only what Synapse still has as this
@@ -119,8 +123,7 @@ deleting tasks already deleted in Synapse is done. Restoring from the Tasks tras
   list, so a reload while offline still shows it. The queue is sent in order when the browser comes
   back online, after any successful request, and every 30 s while items wait. An entry the server
   refuses (4xx other than 401/403) is dropped and reported.
-- **Not covered:** locking notes, folder colours, adding PDFs to the notes and restoring from the
-  notes trash offline; library edits, searching
+- **Not covered:** locking notes and restoring from the notes trash offline; library edits, searching
   (the phone's note search falls back to titles) and other folders or views than the library list
   the app opened with.
 
