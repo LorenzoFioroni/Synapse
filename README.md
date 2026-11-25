@@ -278,7 +278,8 @@ a passkey. Read the [Notes guide](docs/notes.md) for the note format,
 app and your library on that device, so they open without a connection (an iPad on a train, a
 laptop when the server is away); PDFs are saved one by one with **Make Available Offline** in a
 paper's menu, and notes and folders the same way in the notes list. Offline, kept notes can be
-edited, created, renamed, moved and deleted, and tasks added, edited, moved and deleted (also
+edited, created, renamed, moved and deleted, folders and the notes' PDFs created, renamed, moved
+and deleted, and tasks added, edited, moved and deleted (also
 from inside a note); it all goes into Synapse when it answers again, with the notes' offline edits
 merged into their history. Papers whose PDF is not saved, and notes not kept, are dimmed. It works
 the same on an Android phone and an iPad (a long press opens the menus).

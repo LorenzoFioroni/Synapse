@@ -1,7 +1,7 @@
 // Settings → Offline Use: the switch that keeps the app, the library and the PDFs on this device
 // (frontend/src/offline.ts, offlineSync.ts; docs/offline.md), and how much of it is saved.
 import { OFFLINE_EVENT, changesWaiting, offlineEnabled, offlineSupported, offlineNow, savedPdfCount } from '../../offline.js';
-import { NOTES_EVENT, loadNotes, localNotes, notePending } from '../../offlineNotes.js';
+import { NOTES_EVENT, loadNotes, localNotes, notePending, placeOps } from '../../offlineNotes.js';
 import { loadQueue, queuedCount } from '../../plugins/offlineQueue.js';
 import { SYNC_EVENT, disableOffline, enableOffline, lastSynced, syncOffline, syncState } from '../../offlineSync.js';
 import { confirmDialog } from '../../ui/dialog.js';
@@ -57,6 +57,7 @@ export function bindOffline(view: HTMLElement): () => void {
     if (last.failed) parts.push(`${plural(last.failed, 'file')} could not be saved: they are tried again next time`);
     if (waiting) parts.push(`${plural(waiting, 'annotation change')} waiting to be sent`);
     if (edited) parts.push(`${plural(edited, 'note')} changed offline, not yet in Synapse`);
+    if (placeOps().length) parts.push(`${plural(placeOps().length, 'rename, move or deletion', 'renames, moves or deletions')} of notes, PDFs or folders not yet in Synapse`);
     if (queuedCount()) parts.push(`${plural(queuedCount(), 'plugin change')} (tasks, …) waiting to be sent`);
     if (offlineNow()) parts.push('offline now');
     const used = await storageText();
@@ -68,12 +69,12 @@ export function bindOffline(view: HTMLElement): () => void {
     const turnOn = sw.checked;
     if (!turnOn) {
       const waiting = changesWaiting();
-      const edited = localNotes().filter((n) => notePending(n.path)).length;
+      const edited = localNotes().filter((n) => notePending(n.path)).length + placeOps().length;
       if (!(await confirmDialog('Turn off offline use on this device?', {
         confirm: 'Turn Off', danger: !!(waiting || edited),
         detail: 'The saved copy of the app, the library, the PDFs and the notes is deleted from this browser. Synapse needs a connection again.'
           + (waiting ? ` ${plural(waiting, 'annotation change')} made offline have not been sent yet and will be lost.` : '')
-          + (edited ? ` Offline changes to ${plural(edited, 'note')} (edits, renames, deletions) are not in Synapse yet and will be lost.` : '')
+          + (edited ? ` ${plural(edited, 'offline change')} to notes, PDFs or folders (edits, renames, deletions) are not in Synapse yet and will be lost.` : '')
           + (queuedCount() ? ` ${plural(queuedCount(), 'change')} to tasks or other plugins' data will be lost.` : ''),
       }))) { void paint(); return; }
       busy = true; void paint();

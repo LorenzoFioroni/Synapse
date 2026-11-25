@@ -4,7 +4,7 @@
 // by one, when the user makes them available offline (offlineMenuEntry). See docs/offline.md.
 import { api, fileUrl } from './api.js';
 import { OFFLINE_EVENT, forgetFiles, offlineEnabled, offlineNow, offlineSupported, pdfSaved, pruneFiles, refreshSaved, removeOfflineCopy, saveFiles, setOfflineFlag, startOffline } from './offline.js';
-import { PLACES_EVENT, type LocalNote, chosen, chosenPaths, dropNote, folderChosen, setChosen, loadNotes, localNote, localNotes, notePending, noteChosen, putNote, rekeyNote, removeLocalNotes, serverPath, setNotesPusher, unreachable } from './offlineNotes.js';
+import { PLACES_EVENT, type LocalNote, type PlaceOp, chosen, chosenPaths, dropNote, dropOp, folderChosen, setChosen, loadNotes, localNote, localNotes, notePending, noteChosen, originsAfter, originsGone, placeOps, putNote, removeLocalNotes, sentTrash, setNotesPusher, settleRecords, unreachable } from './offlineNotes.js';
 import { flushQueue, loadQueue, queuedCount, removeQueue, setBeforeFlush } from './plugins/offlineQueue.js';
 import { emit } from './store.js';
 import type { Attachment, Item } from './types.js';
@@ -123,13 +123,13 @@ export function pushNotes(): Promise<void> {
 async function doPush(): Promise<void> {
   await loadNotes();
   // first what changes the notes' places, so the edits go to where the notes are now
-  const places = localNotes().some((n) => n.trashed || n.movedFrom);
-  const done = (await pushDeletions()) && (await pushMoves());
+  const places = placeOps().length > 0 || localNotes().some((n) => n.origin !== undefined);
+  const done = await pushPlaces();
   if (places) window.dispatchEvent(new Event(PLACES_EVENT));
   if (!done) return;
   let conflicts = 0;
   for (const n of localNotes()) {
-    if (!n.versions.length || n.conflict || n.trashed || n.movedFrom) continue;
+    if (!n.versions.length || n.conflict || n.trashed || n.origin !== undefined) continue;
     const sent = n.versions.length;
     let r;
     try { r = await api.applyOfflineNote(n.path, n.baseHash, n.baseText, n.versions); } catch (e) {
@@ -162,66 +162,63 @@ async function doPush(): Promise<void> {
 type NoteLocalInfo = NonNullable<LocalNote['file']>['info'];
 
 const status = (e: unknown) => (e as { status?: number } | null)?.status;
-const stem = (p: string) => p.replace(/^.*\//, '').replace(/\.md$/i, '');
+const nameOf = (p: string) => p.replace(/^.*\//, '').replace(/\.md$/i, '');
+const why = (e: unknown) => String((e as Error).message || e).replace(/\.$/, '');
+const under = (p: string, f: string) => p === f || p.startsWith(`${f}/`);
 
-/** Notes deleted offline go to the notes trash, unless they were changed in Synapse meanwhile.
- *  False while Synapse still cannot be reached. */
-async function pushDeletions(): Promise<boolean> {
-  for (const n of localNotes().filter((x) => x.trashed)) {
-    if (n.baseHash === null) { await dropNote(n.path); continue; }   // created and deleted offline
-    const at = serverPath(n);
+/** Makes the place changes made offline in Synapse, in the order they were made. One Synapse
+ *  refuses (a name taken meanwhile, something gone) is left out and said; a deletion leaves out
+ *  what was changed or added in Synapse meanwhile. False while Synapse still cannot be reached. */
+async function pushPlaces(): Promise<boolean> {
+  const refused: string[] = [];
+  for (const op of placeOps()) {
     try {
-      if (!(await api.offlineNoteOps.unchanged(at, n.baseHash.replace(/^merged:/, '')))) {
-        await putNote({ ...n, trashed: undefined, trashId: undefined });
-        toast(`“${stem(n.path)}” was changed in Synapse while you were offline, so it was not deleted.`, { timeout: 9000 });
-        continue;
-      }
-      await api.offlineNoteOps.trash(at);
+      if (op.kind === 'mkdir') await api.offlineNoteOps.newFolder(op.path);
+      else if (op.kind === 'move') {
+        await (op.what === 'folder' ? api.offlineNoteOps.moveFolder(op.from, op.to) : api.offlineNoteOps.move(op.from, op.to));
+        await originsAfter(op);
+      } else await pushTrash(op, refused);
     } catch (e) {
       if (unreachable(e)) return false;
-      if (status(e) !== 404) { toast(`“${stem(n.path)}” could not be deleted: ${(e as Error).message}`, { type: 'error', timeout: 8000 }); continue; }
+      if (op.kind === 'move') {
+        if (status(e) === 404) await originsGone(op);
+        refused.push(`“${nameOf(op.from)}” could not be ${op.what === 'folder' || op.from.replace(/[^/]*$/, '') === op.to.replace(/[^/]*$/, '') ? 'renamed' : 'moved'} to “${op.to}”: ${why(e)}`);
+      } else if (op.kind === 'trash') refused.push(`Something could not be deleted: ${why(e)}`);
+      else refused.push(`The folder “${op.path}” could not be made: ${why(e)}`);
     }
-    await dropNote(n.path);
-    setChosen([n.path], [], false);
+    await dropOp(op);
+  }
+  await settleRecords();   // what Synapse refused is undone here
+  if (refused.length) {
+    toast(`${refused[0]}${refused.length > 1 ? ` (and ${plural(refused.length - 1, 'other change')} made offline).` : '.'}`, { type: 'error', timeout: 12000 });
   }
   return true;
 }
 
-/** Notes renamed or moved offline are renamed or moved in Synapse (which updates links to them).
- *  Tried until none goes in any more, so a chain of renames (b to c, then a to b) finds its order.
- *  False while Synapse still cannot be reached. */
-async function pushMoves(): Promise<boolean> {
-  const failed = new Map<string, unknown>();
-  for (let progress = true; progress;) {
-    progress = false;
-    for (const n of localNotes().filter((x) => x.movedFrom && !x.trashed).sort((a, b) => (a.movedAt || 0) - (b.movedAt || 0))) {
-      const from = n.movedFrom!;
-      try {
-        const r = await api.offlineNoteOps.move(from, n.path);
-        const now = localNotes().find((x) => x.movedFrom === from);   // renamed again meanwhile: that goes next time
-        if (now) await putNote({ ...now, movedFrom: now.path === r.path ? undefined : r.path });
-        failed.delete(from);
-        progress = true;
-      } catch (e) {
-        if (unreachable(e)) return false;
-        failed.set(from, e);
-      }
-    }
+/** A deletion made offline: only what Synapse still has as this device saw it goes to the trash. */
+async function pushTrash(op: Extract<PlaceOp, { kind: 'trash' }>, refused: string[]): Promise<void> {
+  const live = await api.offlineNoteOps.listing();
+  const now = new Map<string, number>([...live.notes.map((n) => [n.path, n.mtime] as const), ...(live.pdfs || []).map((x) => [x.path, x.size] as const)]);
+  const target = (p: string) => op.paths.includes(p) || op.folders.some((f) => under(p, f));
+  const present = [...now.keys()].filter(target);
+  const changed = new Set<string>();
+  for (const p of present) {
+    const kept = localNotes().find((n) => n.origin === p && n.baseHash !== null);
+    // a kept note: its text decides (the listing's time may be older than what this device saw)
+    const same = kept ? await api.offlineNoteOps.unchanged(p, kept.baseHash!.replace(/^merged:/, '')) : op.seen[p] === now.get(p);
+    if (!same) changed.add(p);
   }
-  for (const [from, e] of failed) {
-    const n = localNotes().find((x) => x.movedFrom === from);
-    if (!n) continue;
-    if (status(e) === 404) {
-      // deleted in Synapse meanwhile: edits made offline ask (apply_offline says "deleted"); nothing else is lost
-      if (n.versions.length) await putNote({ ...n, movedFrom: undefined });
-      else { await dropNote(n.path); toast(`“${stem(n.path)}” was deleted in Synapse while you were offline.`, { timeout: 9000 }); }
-      continue;
-    }
-    toast(`“${stem(from)}” could not be renamed to “${stem(n.path)}”: ${(e as Error).message} It keeps its name.`, { type: 'error', timeout: 10000 });
-    if (localNote(from)) await putNote({ ...n, movedFrom: undefined });
-    else { await rekeyNote(n.path, { ...n, path: from, movedFrom: undefined }); setChosen([n.path], [], false); setChosen([from], [], true); }
+  const folders = op.folders.filter((f) => live.folders.includes(f) && ![...changed].some((p) => under(p, f)));
+  const paths = present.filter((p) => !changed.has(p) && !folders.some((f) => under(p, f)));
+  if (changed.size) {
+    const first = [...changed][0];
+    refused.push(changed.size === 1 ? `“${nameOf(first)}” was changed in Synapse while you were offline, so it was not deleted`
+      : `${plural(changed.size, 'file')} changed or added in Synapse while you were offline were not deleted`);
   }
-  return true;
+  if (!paths.length && !folders.length) return;
+  const r = await api.offlineNoteOps.trash(paths, folders);
+  sentTrash.set(op.trashId, r.trash_id);
+  await originsAfter(op, [...r.paths, ...r.pdfs]);
 }
 
 /** Keeps the chosen notes' latest text here (api.getNote remembers it); forgets the ones no longer chosen. */
@@ -337,7 +334,7 @@ export async function disableOffline(): Promise<void> {
   tick();
 }
 
-// A rename or deletion while Synapse answers, behind an earlier one that still waits: send them now.
+// A change of place while Synapse answers, behind an earlier one that still waits: send them now.
 setNotesPusher(() => { setTimeout(() => { void pushNotes(); }, 0); });
 setBeforeFlush(() => pushNotes());
 

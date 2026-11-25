@@ -51,15 +51,21 @@ The note calls of `api.ts` (`getNote`, `checkNote`, `saveNote`, `createNote`, `n
 - **Offline**, a kept note opens from IndexedDB and each save becomes a *local version* (its text
   and the time it was made; saves less than 2 minutes apart are one version). The save answers with
   a local hash (`local:…`), and the note keeps saving locally until its versions are in Synapse. An
-  amber dot marks it. **New notes** can be created offline (the listing shows them), and kept notes
-  can be **renamed, moved to another folder and deleted** (Undo works too): the change is kept on the
-  note's record (`movedFrom`, `trashed`) and the listing shows it at once. Folders (new, renamed,
-  moved, deleted), PDFs and locking need Synapse, and say so.
+  amber dot marks it. **New notes** can be created offline (the listing shows them). Notes (kept or
+  not), **folders** (new, renamed, moved, deleted) and the **PDFs of the notes folder** (renamed,
+  moved, deleted) can be changed offline too, Undo included: each change goes, in order, into a log
+  of place changes (IndexedDB `synapse-offline-notes` / `places`, `PlaceOp`), and the listing shows
+  Synapse's notes with the log applied, at once. A kept note's record follows the changes (its
+  `origin` is where Synapse has it meanwhile); a PDF keeps its number, so a saved copy still opens.
+  While changes wait, later ones are logged too even with Synapse answering, so they go in in order.
+  Locking notes and folder colours need Synapse, and say so.
 - **Back online** (the browser's `online` event, or Synapse answering again), `pushNotes`
-  (`offlineSync.ts`) first makes the deletions (a note changed in Synapse meanwhile is *not*
-  deleted, and says so), then the renames and moves (tried again until none goes in any more, so a
-  chain such as b→c then a→b finds its order; Synapse updates the links to them as usual; a rename
-  Synapse refuses, e.g. because the name was taken meanwhile, is undone here and said), then sends
+  (`offlineSync.ts`) first makes the logged changes in Synapse, in order (`pushPlaces`): Synapse
+  updates links to what moved as usual. A deletion deletes only what Synapse still has as this
+  device saw it (a note's time, a PDF's size; a kept note's hash): a note changed or added in a
+  folder meanwhile stays, with its folder, and this is said. A change Synapse refuses (a name taken
+  meanwhile, something deleted there) is left out and said, and kept notes go back to where Synapse
+  has them (`settleRecords`). Then it sends
   each note's versions with the text and hash it started from to
   `POST /api/notes/offline` (`NotesService.apply_offline`):
   - the note did not change in Synapse: each version is written and committed on its own, by this
@@ -113,7 +119,8 @@ deleting tasks already deleted in Synapse is done. Restoring from the Tasks tras
   list, so a reload while offline still shows it. The queue is sent in order when the browser comes
   back online, after any successful request, and every 30 s while items wait. An entry the server
   refuses (4xx other than 401/403) is dropped and reported.
-- **Not covered:** changing folders of notes or locking notes offline; library edits, searching
+- **Not covered:** locking notes, folder colours, adding PDFs to the notes and restoring from the
+  notes trash offline; library edits, searching
   (the phone's note search falls back to titles) and other folders or views than the library list
   the app opened with.
 
@@ -138,7 +145,7 @@ Synapse to the Home Screen also keeps it. Safari needs https for all of this (th
 | The settings section | `frontend/src/views/settings/offline.ts` |
 | The menu entries and the marks in the list and on the phone | `views/itemlist/menus.ts`, `views/itemlist/rows.ts`, `phone/library.ts`, `phone/reader.ts` |
 | The list of the app's files | `backend/frontend.py` (`shell_files`) |
-| Kept notes, local versions, the note calls offline (renames, moves, deletions too) | `frontend/src/offlineNotes.ts` |
+| Kept notes, local versions, the note calls offline; the log of place changes (notes, folders, PDFs) | `frontend/src/offlineNotes.ts` |
 | Notes on the phone: long press, ⋯ menus, dots | `frontend/src/phone/notes.ts` |
 | Bringing offline edits in: apply, merge, record | `NotesService.apply_offline` (`backend/notes/service.py`), `NoteHistory.offline`/`merge` (`recorder.py`), `POST /api/notes/offline` |
 | The choice on a conflict | `frontend/src/views/notes/offlineConflict.ts` |
