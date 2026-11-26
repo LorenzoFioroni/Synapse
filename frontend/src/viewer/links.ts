@@ -21,8 +21,9 @@ import type { TextItem } from 'pdfjs-dist/types/src/display/api.js';
 import { installLongPress } from '../ui/longpress.js';
 import { inAppTab } from './inTab.js';
 import { JumpHistory } from './jumpHistory.js';
+import { type Position, pdfKey, saveLastRead, startPosition } from './lastRead.js';
 import {
-  type Box, type PageText, type ReadingPosition, destTarget, figureRegion, findCaption, fitRegion, graphicsBoxes, isFloatDest,
+  type Box, type PageText, destTarget, figureRegion, findCaption, fitRegion, graphicsBoxes, isFloatDest,
   popupPlacement, positionAt, previewOrigin, rectPercent, scrollFor,
 } from './linkNav.js';
 import type { PageWrapper } from './viewer.js';
@@ -36,8 +37,6 @@ type LinkEl = HTMLAnchorElement & { zcTarget: LinkTarget };
 /** A PDF rectangle [x0, y0, x1, y1] in viewport pixels (corners not reordered). */
 const viewportRect = (vp: PageViewport, r: ArrayLike<number>): number[] =>
   [...vp.convertToViewportPoint(r[0], r[1]), ...vp.convertToViewportPoint(r[2], r[3])];
-/** A reading position, plus the horizontal scroll when the page is wider than the view. */
-type Position = ReadingPosition & { sx?: number };
 interface PageBox { num: number; top: number; height: number; el: HTMLElement }
 
 /** pdf.js 3.4 types its point conversions as Object; they return [x, y]. */
@@ -194,11 +193,28 @@ let navIdx = jumps ? 0 : history.state?.zcIdx ?? 0;
 let navMax = navIdx;
 if (!jumps) history.replaceState({ ...(history.state || {}), zcIdx: navIdx }, '');
 
+const readKey = pdfKey(new URLSearchParams(location.search));
 function recordPosition() {
   const pos = currentPosition();
   if (jumps) jumps.record(pos);
   else if (pos) history.replaceState({ ...(history.state || {}), zcIdx: navIdx, zcPos: pos }, '');
+  if (pos && readKey) saveLastRead(readKey, pos);   // opening this PDF again comes back here (lastRead.ts)
 }
+
+/* Opened without a page to go to: back to where this PDF was last read — unless the reader
+ starts scrolling first. Only scrolling by the reader (or this) moves the view before then. */
+async function reopenWhereLeft(): Promise<void> {
+  const pos = startPosition();
+  if (!pos) return;
+  let moved = false;
+  const stop = () => { moved = true; };
+  container.addEventListener('wheel', stop, { passive: true, once: true });
+  container.addEventListener('touchmove', stop, { passive: true, once: true });
+  window.addEventListener('keydown', stop, { once: true });
+  if (!(await waitForPage(pos.page)) || moved || container.scrollTop > 0) return;
+  await scrollToPosition(pos);
+}
+reopenWhereLeft();
 
 let scrollTimer: ReturnType<typeof setTimeout> | undefined;
 container.addEventListener('scroll', () => {

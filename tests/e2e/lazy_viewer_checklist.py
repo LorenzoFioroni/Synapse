@@ -1,6 +1,7 @@
 """Browser checklist for the PDF viewer on long documents: pages are drawn only near
 the viewport, so a 300-page PDF opens fast, keeps few canvases alive, jumps and zooms quickly, and
-annotations on far pages are neither lost nor missing when you get there.
+annotations on far pages are neither lost nor missing when you get there; it reopens where it
+was last read.
 
     python tests/e2e/lazy_viewer_checklist.py
 
@@ -86,7 +87,8 @@ async def main():
 
         async with async_playwright() as p:
             browser = await p.chromium.launch()
-            page = await browser.new_page(viewport={"width": 1200, "height": 900})
+            ctx = await browser.new_context(viewport={"width": 1200, "height": 900})
+            page = await ctx.new_page()
             errors = []
             page.on("pageerror", lambda e: errors.append(str(e)))
 
@@ -179,6 +181,25 @@ async def main():
                 total == PAGES and 0 < done < 40,
                 f"{done} of {total}",
             )
+            # opened again without a page: back where it was last read, in this tab or a new one
+            await page.evaluate("document.querySelector('.page-wrapper[data-page-number=\"120\"]').scrollIntoView()")
+            await page.wait_for_timeout(700)  # saved 200 ms after the scrolling stops
+            for name, tab in (("this tab", page), ("a new tab", await ctx.new_page())):
+                await tab.goto(url)
+                await tab.wait_for_selector('.page-wrapper[data-page-number="120"] canvas', timeout=10000)
+                await tab.wait_for_timeout(800)
+                r = await tab.evaluate("window.zcViewer.renderedPages()")
+                counter = (await tab.text_content("#page-num-text")).strip()
+                check(
+                    f"opening the PDF again in {name} goes back to page 120",
+                    120 in r and 1 not in r and counter.startswith("120 /"),
+                    f"{r} {counter}",
+                )
+            await page.goto(url + "&page=5")
+            await page.wait_for_selector('.page-wrapper[data-page-number="5"] canvas', timeout=10000)
+            await page.wait_for_timeout(600)
+            r = await page.evaluate("window.zcViewer.renderedPages()")
+            check("a cited page (?page=5) still wins over the last one read", 5 in r and 120 not in r, str(r))
             check("no JavaScript errors", not errors, "; ".join(errors[:3]))
             await browser.close()
     finally:

@@ -5,6 +5,7 @@
 import '../offline.js';
 import type { PDFDocumentProxy, PDFPageProxy, RenderTask, TextLayer } from 'pdfjs-dist';
 import { startPresence } from '../presence.js';
+import { startPosition } from './lastRead.js';
 import { initPdfSearch } from './search.js';
 
 /** A page's box in the viewer; pdf.js's page object is kept on it. */
@@ -585,8 +586,9 @@ function initPdf(pdfUrl: string): void {
     }
     layoutPage(firstPage);
     pageNumText.textContent = `1 / ${doc.numPages}`;
-    // draw page 1 before asking the PDF worker about the other pages (it does one thing at a time)
-    if (!new URLSearchParams(location.search).get('page')) {
+    // draw page 1 before asking the PDF worker about the other pages (it does one thing at a time),
+    // unless the viewer opens at another page (?page=…, or where it was last read: links.ts)
+    if (!new URLSearchParams(location.search).get('page') && !startPosition()) {
       wanted.add(1);
       await pump();
     }

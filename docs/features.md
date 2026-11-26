@@ -272,7 +272,8 @@ see the [README](../README.md); for code ownership, see the [architecture map](a
   figure or table with its caption, scaled to fit — the caption is recognised in the page text and
   the figure from what the page draws around it, wherever the PDF anchors the link. Scroll inside
   the preview to look around; zoom it with pinch, Ctrl/Cmd+scroll or its − / + buttons. Back/Forward (toolbar arrows, Alt+← / Alt+→, Cmd+[ / Cmd+], mouse
-  buttons) return to where you were before following a link, even after zooming.
+  buttons) return to where you were before following a link, even after zooming. A PDF opens again
+  where you last read it on that device (a citation's page still opens at that page).
 - **Quote / Snapshot to note** from the PDF viewer: select text (or drag a region with the camera
   button) and add it to an open note or the paper note, with its citation. Clicking that citation
   later — in read mode, with Cmd/Ctrl+click in the editor, or the PDF button of its card — opens the

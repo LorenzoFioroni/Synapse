@@ -439,7 +439,9 @@ figures (no DOM, unit-tested). See [notes](notes.md#galleries).
 
 **`viewer/`: the PDF viewer.** `viewer.ts` lays out the pages, draws those near the viewport and
 zooms. `links.ts` makes links clickable with hover previews and Back/Forward, using the pure
-helpers in `linkNav.ts`. `notesBridge.ts` is Quote to note and Snapshot to note, and finds a
+helpers in `linkNav.ts`; it also saves the reading position with `lastRead.ts` (per PDF, by attachment
+or notes-PDF number, in `localStorage` under `zc.viewer.lastRead`, the last 300 PDFs) and opens a PDF
+without `?page=` there, unless the reader scrolls first. `notesBridge.ts` is Quote to note and Snapshot to note, and finds a
 quote on the page with `locate.ts`. `annotations.ts` adds a layer per page, loads the records (of the attachment, or with `?npdf=` of a PDF kept in the notes folders: `ownerBase` in `model.ts`) and
 picks up changes made elsewhere; `annotations/model.ts` holds the records, draws them, saves each
 change and keeps undo and redo; `annotations/input.ts` is the drawing tools (boxes, ink, text
